@@ -1,0 +1,1 @@
+--with-coverage --cover-erase --cover-inclusive ../features --cover-package=Homage

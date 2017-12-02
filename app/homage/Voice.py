@@ -11,11 +11,28 @@ requests.packages.urllib3.disable_warnings()
 from gtts import gTTS
 import os
 import pygame as pg
-# pip install mutagen
 import mutagen.mp3
+from tempfile import gettempdir
 
 class Voice(Elk):
     said = ElkAttribute(mode='rw', type=str)
+    muted = ElkAttribute(mode='rw', type=bool,
+        default=False)
+    temp_path = ElkAttribute(mode='rw', type=str,
+        builder='_temp_path',lazy=True)
+    play_filename = ElkAttribute(mode='rw', type=str,
+        default='pcvoice.mp3')
+    
+    def _temp_path(self):
+        path = os.path.join(gettempdir(), '.{}'.format(hash(os.times())))
+        os.makedirs(path)
+        return path
+
+    def mute(self):
+        self.muted = True
+
+    def unmute(self):
+        self.muted = False
 
     def play_file(self, music_file, volume=0.8):
         # set up the mixer    
@@ -39,19 +56,16 @@ class Voice(Elk):
             return
         pg.mixer.music.play()
         while pg.mixer.music.get_busy():
-            # check if playback has finished
             clock.tick(30)
+        pg.mixer.music.stop()
+        pg.mixer.quit()
     
     def say(self,text):
         self.said = text
-        tts = gTTS(text=text, lang='en')
-        filename = "pcvoice.mp3"
-        tts.save(filename)
-        self.play_file(filename)
-#         if os.name == 'nt':
-#             os.startfile(filename)
-#         else:
-#             os.system("mpg321 " + filename)
+        if not self.muted:
+            tts = gTTS(text=text, lang='en')
+            tts.save(self.play_filename)
+            self.play_file(self.play_filename)
 
 if __name__ == "__main__":
     v = Voice()

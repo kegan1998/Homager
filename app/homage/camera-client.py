@@ -58,7 +58,6 @@ class RestRecognition(elk.Elk):
     def recognize(self,what,image):
         retval, buffer = cv2.imencode('.png', image)
         image_as_text = base64.b64encode(buffer)
-        #return {u'faces':[]}
         response = self.rest.post("/"+what, {what:image_as_text})
         return response
 

@@ -1,9 +1,9 @@
 
 from app.homage.camera.Camera import Camera
-from elk import ElkAttribute
+from elk import Elk, ElkAttribute
 
 class TestCamera(Camera):
-    image = ElkAttribute(mode='rw', required=True)
+    image = ElkAttribute(mode='rw')
 
     def _camera(self):
         return None

@@ -4,61 +4,87 @@ import os
 import numpy as np
 import os.path
 from PIL import Image
-from PIL import ImageOps
 import logging as log
 import yaml
-import elk
+from elk import Elk, attr
 import types
 import inspect
-from app.homage.FaceImage import FaceImage 
+import datetime
+import app.homage.const as const
+from FaceImage import FaceImage
+from recognition.Recognition import Recognition
 
-log.basicConfig(level=log.INFO)#filename='webcam.log',level=log.INFO)
+log.basicConfig(level=log.INFO)  # filename='webcam.log',level=log.INFO)
 
-class FaceAgent(elk.Elk):
-    video_capture = elk.ElkAttribute(mode='ro',
+
+const.declare('LOCATION', 'location')
+const.declare('SIZE', 'size')
+const.declare('PREDICTED', 'predicted')
+const.declare('CONFIDENCE', 'confidence')
+const.declare('IMAGE', 'image')
+
+
+class FaceAgent(Recognition):
+    video_capture = attr(mode='ro',
         builder="_video_capture", lazy=True)
-    data_path = elk.ElkAttribute(mode='ro',type=str,
+    data_path = attr(mode='ro', type=str,
         builder='_data_path')
-    cascade_path = elk.ElkAttribute(mode='ro', type=str,
+    cascade_path = attr(mode='ro', type=str,
         builder='_cascade_path')
-    face_cascade = elk.ElkAttribute(mode='ro', #type=cv2.CascadeClassifier,
-        builder = "_face_cascade", lazy=True)
-    photos_path = elk.ElkAttribute(mode='ro', type=str,
+    face_cascade = attr(mode='ro',  # type=cv2.CascadeClassifier,
+        builder="_face_cascade", lazy=True)
+    photos_path = attr(mode='ro', type=str,
         builder='_photos_path')
-    faces_path = elk.ElkAttribute(mode='ro', type=str,
+    faces_path = attr(mode='ro', type=str,
         builder='_faces_path')
-    model_name = elk.ElkAttribute(mode='ro', type=str,
+    model_name = attr(mode='ro', type=str,
         default="LBPH")
 #        default="Eigen")
-    recognizer = elk.ElkAttribute(mode='ro',
-        builder = "_recognizer",lazy=True)
-    db_path = elk.ElkAttribute(mode='ro', type=str,
-        builder='_db_path',lazy=True)
-    new_faces = elk.ElkAttribute(mode='rw', type=list,
-        builder='_new_faces',lazy=True)
-    facebook = elk.ElkAttribute(mode='rw',
+    recognizer = attr(mode='ro',
+        builder="_recognizer", lazy=True)
+    db_path = attr(mode='ro', type=str,
+        builder='_db_path', lazy=True)
+    log_path = attr(mode='ro', type=str,
+        builder='_log_path', lazy=True)
+    new_faces = attr(mode='rw', type=list,
+        builder='_new_faces', lazy=True)
+    facebook = attr(mode='rw',
         default=None)
-    size = elk.ElkAttribute(mode='ro',
-        default = (200,200) )
+    size = attr(mode='ro',
+        default=(100, 100))
+    show_detailed = attr(mode='ro', type=bool,
+        default=True)
 
-    eye_cascade = elk.ElkAttribute(mode='ro',
-        builder='_eye_cascade',lazy=True)
-    eye_cascade_path = elk.ElkAttribute(mode='ro',
-        builder = "_eye_cascade_path", lazy=True)
+    eye_cascade = attr(mode='ro',
+        builder='_eye_cascade', lazy=True)
+    eye_cascade_path = attr(mode='ro',
+        builder="_eye_cascade_path", lazy=True)
 
     def _photos_path(self):
         return self.data_path + "/photos"
+
     def _faces_path(self):
         return self.data_path + "/faces"
+
     def _data_path(self):
-        return os.path.dirname(inspect.getfile(inspect.currentframe()))+'/data' 
+        return os.path.dirname(
+            os.path.abspath(
+                inspect.getfile(inspect.currentframe()))) + '/../../data'
+
+    def _log_path(self):
+        return os.path.dirname(
+            os.path.abspath(
+                inspect.getfile(inspect.currentframe()))) + '/../../log'
+
     def _cascade_path(self):
         return self.data_path + "/haarcascade_frontalface_default.xml"
+
     def _new_faces(self):
         return []
 
     def _eye_cascade_path(self):
         return self.data_path + "/haarcascade_eye_default.xml"
+
     def _eye_cascade(self):
         filename = self.eye_cascade_path
         if os.path.isfile(filename):
@@ -73,15 +99,15 @@ class FaceAgent(elk.Elk):
         elif self.model_name == 'Fisher':
             #self.size = 300,300
             recognizer = cv2.createFisherFaceRecognizer()
-        elif self.model_name == 'LBPH': 
+        elif self.model_name == 'LBPH':
             recognizer = cv2.createLBPHFaceRecognizer(threshold=200)
         else:
             raise Exception('Unknown face recognition model "%s"'
-                % (self.model_name))        
+                % (self.model_name))
         return recognizer
-    
+
     def _db_path(self):
-        return self.data_path + '/faces.'+self.model_name+'.data'
+        return self.data_path + '/faces.' + self.model_name + '.data'
 
     def __del__(self):
         self.video_capture.release()
@@ -96,24 +122,25 @@ class FaceAgent(elk.Elk):
         else:
             raise Exception("Invalid cascade file path: " + self.cascade_path)
 
-    def get_db_files(self,path):
-        log.info("reading files in "+path)
+    def get_db_files(self, path):
+        log.info("reading files in " + path)
         files = dict()
         for entry_name in os.listdir(path):
-            fullname = os.path.join(path,entry_name)
+            fullname = os.path.join(path, entry_name)
             if os.path.isfile(fullname):
                 entry_name = os.path.split(entry_name)[1].split(".")[0]
             if not entry_name in files:
                 files[entry_name] = []
             if os.path.isdir(fullname):
                 sub_files = self.get_db_files(fullname)
-                flat_list = [item for sublist in sub_files.values() for item in sublist]
+                flat_list = [item for sublist in list(sub_files.values())
+                    for item in sublist]
                 files[entry_name].extend(flat_list)
             else:
                 files[entry_name].append(fullname)
         return files
 
-    def detect_faces(self,image):
+    def detect_faces(self, image):
         return self.face_cascade.detectMultiScale(
             image,
             scaleFactor=1.1,
@@ -122,7 +149,7 @@ class FaceAgent(elk.Elk):
             flags = cv2.CASCADE_SCALE_IMAGE
         )
 
-    def detect_eyes(self,image):
+    def detect_eyes(self, image):
         return self.eye_cascade.detectMultiScale(
             image,
              scaleFactor=1.1,
@@ -131,26 +158,23 @@ class FaceAgent(elk.Elk):
 #             flags = cv2.CASCADE_SCALE_IMAGE
         )
 
-    def load_image(self,filename):
-        log.info("reading: "+filename)
+    def load_image(self, filename):
+        log.info("reading: " + filename)
         image = Image.open(filename)
         image = image.convert('L')
         image = np.array(image, 'uint8')
 
-#         type = 
-#         if self._type is not None and not isinstance(value, self._type):
-            
         face = FaceImage(image=image)
         eyes = self.detect_eyes(face.image)
-        if eyes > 1:
-            face.align_eyes(eyes[0],eyes[1])
-            
+        if len(eyes) > 1:
+            face.align_eyes(eyes[0], eyes[1])
+
         image = face.image
         return image
 
     def compile_faces(self):
         if not os.path.exists(self.faces_path):
-            os.makedirs(self.faces_path)#py3 , exist_ok=True)
+            os.makedirs(self.faces_path)  # py3 , exist_ok=True)
         file_names = self.get_db_files(self.photos_path)
         for name in file_names:
             index = 0
@@ -158,12 +182,13 @@ class FaceAgent(elk.Elk):
                 image = self.load_image(filename)
                 for (x, y, w, h) in self.detect_faces():
                     face_image = image[y: y + h, x: x + w]
-                    face_filename = self.faces_path + '/'+name+'.'+str(index)+'.png'
+                    face_filename = self.faces_path + '/' + name + \
+                        '.' + str(index) + '.png'
                     index += 1
-                    log.info("writing: "+face_filename)
-                    cv2.imwrite(face_filename,face_image)
+                    log.info("writing: " + face_filename)
+                    cv2.imwrite(face_filename, face_image)
                     #cv2.rectangle(image, (x, y), (x+w, y+h), (0, 255, 0), 2)
-            
+
 #                 cv2.imshow('Video', image)
 #                 while True:
 #                     if cv2.waitKey(1) & 0xFF == ord('q'):
@@ -176,22 +201,22 @@ class FaceAgent(elk.Elk):
             images = []
             for filename in file_names[name]:
                 images.append(self.load_image(filename))
-            self.facebook[name]= images
-                
+            self.facebook[name] = images
+
     def load(self):
         if not os.path.isfile(self.db_path):
             return False
-        log.info("reading persistency file: "+self.db_path)
+        log.info("reading persistency file: " + self.db_path)
         self.recognizer.load(self.db_path)
-        with open(self.db_path+'.yaml', 'r') as infile:
+        with open(self.db_path + '.yaml', 'r') as infile:
             self.labels = yaml.load(infile)
         return True
 
-    def save(self,override=True):
+    def save(self, override=True):
         if not os.path.isfile(self.db_path):
-            log.info("writing persistency file: "+self.db_path)
+            log.info("writing persistency file: " + self.db_path)
             self.recognizer.save(self.db_path)
-            with open(self.db_path+'.yaml', 'w') as outfile:
+            with open(self.db_path + '.yaml', 'w') as outfile:
                 yaml.dump(self.labels, outfile, default_flow_style=False)
 
     def reset(self):
@@ -211,57 +236,72 @@ class FaceAgent(elk.Elk):
                 flat_images.extend(images)
             else:
                 for image in images:
-                    small_image = cv2.resize(image,self.size)
-                    flat_images.append( small_image )
-                    flat_images.append( cv2.flip( small_image, 1 ) )
+                    small_image = cv2.resize(image, self.size)
+                    flat_images.append(small_image)
+                    flat_images.append(cv2.flip(small_image, 1))
                 multi *= 2
-            labels.extend([len(self.labels)] * (len(images)*multi))
-           
+            labels.extend([len(self.labels)] * (len(images) * multi))
+
             self.labels.append(name)
         if len(flat_images) == 0:
             raise "Not enough known faces to recognize"
-        self.recognizer.train(flat_images, np.array(labels) )
+        self.recognizer.train(flat_images, np.array(labels))
         self.save()
         return True
-    
-    def recognize(self,image):
+
+    def recognize(self, image, normalized=True, aligned=True):
+        "main function to recognize faces"
+        fimage = FaceImage(image=image)
+        image = fimage.gray()
         faces = self.detect_faces(image)
         face_records = []
+        if len(faces) == 0:
+            #log.info("no faces are detected")
+            pass
         for (x, y, w, h) in faces:
-            face_image = image[y: y + h, x: x + w]
-            if self.size:
-                face_image = cv2.resize(face_image,self.size)
+            face_image = FaceImage(image=image[y: y + h, x: x + w])
+            log.info("processing face at (%d,%d) with (%d,%d)" % (x, y, w, h))
+            if normalized:
+                face_image.normalize()
+                if aligned:
+                    eyes = self.detect_eyes(face_image.image)
+                    if len(eyes) > 1:
+                        face_image.align_eyes(eyes[0], eyes[1])
 
-            predicted, confidence = self.recognizer.predict(face_image)
+            #if self.size:
+                #face_image.resize(self.size)
+            face_image.image = cv2.resize(face_image.image, self.size)
+            predicted, confidence = self.recognizer.predict(face_image.image)
             face_records.append(
                 {
-                    'location': (x,y),
-                    'size': (w,h),
+                    'location': (x, y),
+                    'size': (w, h),
                     'predicted': self.decode_face_id(predicted),
                     'confidence': confidence,
-                    'image' : face_image,
+                    'image': face_image.image
                 }
             )
         return face_records
 
-    def predict(self,face_image):
+    def predict(self, face_image):
         predicted, confidence = self.recognizer.predict(face_image)
         return {
             'predicted': self.decode_face_id(predicted),
             'confidence': confidence,
         }
 
-    def decode_face_id(self,face_id):
+    def decode_face_id(self, face_id):
         if face_id < 0 or face_id >= len(self.labels):
             return 'unknown'
         return self.labels[face_id]
 
-    def new_face(self,image):
+    def new_face(self, image):
         if len(self.new_faces) < 10:
             self.new_faces.append(image)
+            log.info("adding a new face ({})".format(len(self.new_faces)))
             return
-        label = 'person' + str(len(self.labels)+1)
-        print "detected unknown face\n"
+        label = 'person' + str(len(self.labels) + 1)
+        log.info("detected unknown face")
         self.labels.append(label)
         for image in self.new_faces:
             filename = None
@@ -270,15 +310,37 @@ class FaceAgent(elk.Elk):
                 filename = self.faces_path + '/' + label + '.' + suffix + '.png'
                 if os.path.exists(filename):
                     filename = None
-            print "storing to " + filename + "\n" 
-            cv2.imwrite(filename,image)
+            log.info("storing to " + filename)
+            cv2.imwrite(filename, image)
         if self.facebook:
             self.facebook[label] = self.new_faces
         else:
             self.load_faces()
         self.new_faces = []
         self.learn()
-    
+
+    def remember_face(self, face):
+        if not os.path.exists(self.log_path):
+            os.makedirs(self.log_path)
+        filename = os.path.join(
+            self.log_path,
+            datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+            + "_face_" + face[const.PREDICTED]
+            + ".png")
+        cv2.imwrite(filename, face[const.IMAGE])
+
+    def remember_image(self, image, title=''):
+        if not os.path.exists(self.log_path):
+            os.makedirs(self.log_path)
+        if len(title) > 0:
+            title = '_image_' + title
+        filename = os.path.join(
+            self.log_path,
+            datetime.datetime.now().strftime("%Y-%m-%d %H-%M-%S")
+            + title
+            + ".png")
+        cv2.imwrite(filename, image)
+
     def init(self):
         if self.load():
             return True
@@ -294,48 +356,60 @@ class FaceAgent(elk.Elk):
             ret, frame = self.video_capture.read()
             image = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             faces = a.recognize(image)
-            self.show_faces(image,faces)
+            self.show_faces(image, faces)
 
-    def show_faces(self,image,faces,delay=300):
+    def show_faces(self, image, faces, delay=300):
         font = cv2.FONT_HERSHEY_SIMPLEX
         for face in faces:
             location = face['location']
             size = face['size']
-            cv2.rectangle(image, location, (location[0]+size[0], location[1]+size[1]), (0, 255, 0), 2)
-            if face['confidence'] > 150:
-                self.new_face(face['image'])
+            cv2.rectangle(image, location,
+                (location[0] + size[0],
+                location[1] + size[1]), (0, 255, 0), 2)
+            if face['confidence'] > 1000:
+                #self.new_face(face['image'])
+                pass
             else:
                 cv2.putText(
                     image,
-                    face['predicted']+':'+str(face['confidence']),
-                    (location[0],location[1]+size[1]),
+                    face['predicted'] + ':' + str(face['confidence']),
+                    (location[0], location[1] + size[1]),
                     font,
                     1,
-                    (255,255,255),
+                    (255, 255, 255),
                     2,
                     cv2.CV_AA)
-        cv2.imshow('Video', image)
-        cv2.waitKey(delay)
+        cv2.imshow('FaceAgent', image)
 
-    def merge_faces(self,from_name,to_name):
+    def merge_faces(self, from_name, to_name):
         pass
 
 if __name__ == "__main__":
     a = FaceAgent()
-#     a.init()
+    a.init()
 #     a.save()
-#     a.run_recognition()
+    a.run_recognition()
 
-    f = FaceImage( filename=a.photos_path + '/nick.4.jpg' )
+    from datetime import datetime
+    f = FaceImage(filename=a.photos_path + '/nick.4.jpg')
+    while (1):
+        startTime = datetime.now()
+        a.recognize(f.image)
+        timeElapsed = datetime.now() - startTime
+        print('Time elpased (hh:mm:ss.ms) {}'.format(timeElapsed))
+
     faces = a.detect_faces(f.image)
-    for (x,y,w,h) in faces:
+    for (x, y, w, h) in faces:
 #        cv2.rectangle(f.image,(x,y),(x+w,y+h),(255,0,0),2)
-        roi_gray = f.image[y:y+h, x:x+w]
-    
+        roi_gray = f.image[y:y + h, x:x + w]
+
         eyes = a.detect_eyes(roi_gray)
-        for (ex,ey,ew,eh) in eyes:
-                cv2.rectangle(roi_gray,(ex,ey),(ex+ew,ey+eh),(0,255,0),2)
-        result = f.align_eyes( eyes[0], eyes[1], roi_gray )
+        for (ex, ey, ew, eh) in eyes:
+                cv2.rectangle(roi_gray,
+                    (ex, ey),
+                    (ex + ew, ey + eh),
+                    (0, 255, 0), 2)
+        result = f.align_eyes(eyes[0], eyes[1], roi_gray)
         cv2.imshow('result', result)
 #        cv2.imshow('image', image)
 #        cv2.imshow('new', roi_gray)
